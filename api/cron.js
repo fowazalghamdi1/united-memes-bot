@@ -1,7 +1,7 @@
-// /api/cron.js
-import fetch from 'node-fetch';
-import { TwitterApi } from 'twitter-api-v2';
-import FormData from 'form-data';
+// /api/cron.js (CommonJS version)
+const fetch = require('node-fetch');
+const { TwitterApi } = require('twitter-api-v2');
+const FormData = require('form-data');
 
 const HF_API_KEY = process.env.HF_API_KEY;
 const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID;
@@ -12,7 +12,7 @@ const TWITTER_CLIENT = new TwitterApi({
   accessSecret: process.env.TWITTER_ACCESS_SECRET
 });
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     console.warn("🔒 Unauthorized access attempt");
     return res.status(401).json({ error: 'Unauthorized' });
@@ -81,4 +81,4 @@ export default async function handler(req, res) {
     console.error("❌ Meme bot error:", err);
     res.status(500).json({ error: err.message });
   }
-}
+};
