@@ -1,4 +1,4 @@
-// /api/cron.js — updated, check bypassed, dependency-free
+// /api/cron.js — updated with safe JSON parsing and logging
 export default async function handler(req, res) {
   // TEMPORARILY DISABLED AUTH CHECK
   // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -21,8 +21,16 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({ inputs: `Write a hilarious dark comedy tweet in Gen Z American slang about ${topic}` })
     });
-    const textJson = await textRes.json();
-    const tweetText = textJson[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
+
+    const textRaw = await textRes.text();
+    let tweetText;
+    try {
+      const parsed = JSON.parse(textRaw);
+      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
+    } catch (e) {
+      console.error("⚠️ Failed to parse tweet response:", textRaw);
+      throw new Error("Tweet generation failed");
+    }
     console.log("✅ Generated tweet:", tweetText);
 
     console.log("🟡 Generating meme image...");
