@@ -8,15 +8,15 @@
   "cron": [
     {
       "path": "/api/daily-run",
-      "schedule": "0 14 * * *"  // 9 AM EST
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/daily-run",
-      "schedule": "0 18 * * *"  // 1 PM EST
+      "schedule": "0 18 * * *"
     },
     {
       "path": "/api/daily-run",
-      "schedule": "0 22 * * *"  // 5 PM EST
+      "schedule": "0 22 * * *"
     }
   ]
 }
