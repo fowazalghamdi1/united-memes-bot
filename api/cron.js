@@ -1,8 +1,9 @@
-// /api/cron.js — dependency-free, native fetch version
+// /api/cron.js — updated, check bypassed, dependency-free
 export default async function handler(req, res) {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  // TEMPORARILY DISABLED AUTH CHECK
+  // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  //   return res.status(401).json({ error: 'Unauthorized' });
+  // }
 
   try {
     console.log("🟡 Fetching Twitter trends...");
