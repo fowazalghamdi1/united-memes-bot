@@ -1,83 +1,75 @@
-// /api/cron.js (ESM version using native fetch)
-import { TwitterApi } from 'twitter-api-v2';
-import FormData from 'form-data';
-
-const HF_API_KEY = process.env.HF_API_KEY;
-const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID;
-const TWITTER_CLIENT = new TwitterApi({
-  appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_SECRET
-});
-
+// /api/cron.js — native, no external packages
 export default async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    console.warn("🔒 Unauthorized access attempt");
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
-    console.log("🟡 Step 1: Fetching Twitter Trends...");
+    console.log("🟡 Fetching Twitter trends...");
     const html = await fetch('https://trends24.in/united-states/').then(r => r.text());
     const matches = [...html.matchAll(/\/hashtag\/([^\"]+)/g)].map(m => decodeURIComponent(m[1].replace(/\+/g, ' '))).slice(0, 3);
     const topic = matches[0] || 'USA memes';
-    console.log("✅ Trends fetched:", matches);
+    console.log("✅ Top trends:", matches);
 
-    console.log("🟡 Step 2: Generating tweet text...");
+    console.log("🟡 Generating tweet text...");
     const textRes = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2", {
       method: 'POST',
       headers: {
-        "Authorization": `Bearer ${HF_API_KEY}`,
+        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: `Write a super funny tweet in American Gen Z slang about ${topic}` })
+      body: JSON.stringify({ inputs: `Write a hilarious dark comedy tweet in Gen Z American slang about ${topic}` })
     });
-    const textData = await textRes.json();
-    const tweetText = textData[0]?.generated_text?.slice(0, 280) || `Meme time about ${topic}`;
-    console.log("✅ Tweet text:", tweetText);
+    const textJson = await textRes.json();
+    const tweetText = textJson[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
+    console.log("✅ Generated tweet:", tweetText);
 
-    console.log("🟡 Step 3: Generating meme image...");
+    console.log("🟡 Generating meme image...");
     const imgRes = await fetch("https://api-inference.huggingface.co/models/CompVis/stable-diffusion-v1-4", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${HF_API_KEY}`,
+        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: `A hilarious cartoon meme in Simpsons style about ${topic}` })
+      body: JSON.stringify({ inputs: `A funny cartoon meme in Family Guy style about ${topic}` })
     });
 
     const imgArrayBuffer = await imgRes.arrayBuffer();
-    const imgBuffer = Buffer.from(imgArrayBuffer);
-    if (!imgBuffer || imgBuffer.length < 1000) throw new Error("Image generation failed or returned empty.");
-    console.log("✅ Meme image generated");
+    const imgBase64 = Buffer.from(imgArrayBuffer).toString("base64");
+    if (imgBase64.length < 1000) throw new Error("Image generation failed");
 
-    console.log("🟡 Step 4: Uploading to Imgur...");
-    const form = new FormData();
-    form.append("image", imgBuffer.toString('base64'));
-    const uploadRes = await fetch("https://api.imgur.com/3/image", {
+    console.log("🟡 Uploading image to Imgur...");
+    const imgurRes = await fetch("https://api.imgur.com/3/image", {
       method: "POST",
       headers: {
-        Authorization: `Client-ID ${IMGUR_CLIENT_ID}`
+        "Authorization": `Client-ID ${process.env.IMGUR_CLIENT_ID}`,
+        "Content-Type": "application/json"
       },
-      body: form
+      body: JSON.stringify({ image: imgBase64 })
+    });
+    const imgurData = await imgurRes.json();
+    const imgURL = imgurData?.data?.link;
+    if (!imgURL) throw new Error("Failed to upload to Imgur");
+    console.log("✅ Uploaded to Imgur:", imgURL);
+
+    console.log("🟡 Posting to Twitter...");
+    const tweetRes = await fetch("https://api.twitter.com/2/tweets", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂` })
     });
 
-    const uploadData = await uploadRes.json();
-    const imgURL = uploadData.data?.link || '';
-    if (!imgURL) throw new Error("Imgur upload failed");
-    console.log("✅ Image uploaded:", imgURL);
-
-    console.log("🟡 Step 5: Posting to Twitter...");
-    await TWITTER_CLIENT.v2.tweet({
-      text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #USA 😂`
-    });
-    console.log("✅ Tweet posted successfully!");
+    const tweetResult = await tweetRes.json();
+    if (!tweetResult.data) throw new Error("Tweet failed");
+    console.log("✅ Tweet posted!");
 
     res.status(200).json({ success: true, topic, tweetText, imgURL });
 
   } catch (err) {
-    console.error("❌ Meme bot error:", err);
+    console.error("❌ Cron error:", err);
     res.status(500).json({ error: err.message });
   }
 }
