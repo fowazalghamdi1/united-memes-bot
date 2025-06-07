@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   try {
     // 1. Scrape Twitter Trends from trends24.in (USA)
     const html = await fetch('https://trends24.in/united-states/').then(r => r.text());
-    const matches = [...html.matchAll(/\/hashtag\/([^"]+)/g)].map(m => decodeURIComponent(m[1].replace(/\+/g, ' '))).slice(0, 3);
+    const matches = [...html.matchAll(/\/hashtag\/([^\"]+)/g)].map(m => decodeURIComponent(m[1].replace(/\+/g, ' '))).slice(0, 3);
     const topic = matches[0] || 'USA memes';
 
     // 2. Generate funny tweet
@@ -43,8 +43,9 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({ inputs: `A hilarious cartoon meme in Simpsons style about ${topic}` })
     });
-    const blob = await imgRes.blob();
-    const buffer = Buffer.from(await blob.arrayBuffer());
+
+    const imgBuffer = await imgRes.buffer();
+    if (!imgBuffer || imgBuffer.length < 1000) throw new Error("Image generation failed or returned empty.");
 
     // 4. Upload to Imgur
     const imgurRes = await fetch("https://api.imgur.com/3/image", {
@@ -52,15 +53,16 @@ export default async function handler(req, res) {
       headers: {
         Authorization: `Client-ID ${IMGUR_CLIENT_ID}`
       },
-      body: new URLSearchParams({ image: buffer.toString('base64') })
+      body: new URLSearchParams({ image: imgBuffer.toString('base64') })
     });
+
     const imgurData = await imgurRes.json();
-    const imgURL = imgurData.data.link;
+    const imgURL = imgurData.data?.link || '';
+    if (!imgURL) throw new Error("Imgur upload failed");
 
     // 5. Post to Twitter
     await TWITTER_CLIENT.v2.tweet({
-      text: `${tweetText}\n\n#${topic.replace(/\s+/g, '')} #meme #USA 😂`,
-      media: { media_ids: [] }
+      text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #USA 😂`
     });
 
     res.status(200).json({ success: true, topic, tweetText, imgURL });
