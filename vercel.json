@@ -1,21 +1,21 @@
 {
   "functions": {
-    "api/daily-run.js": {
+    "api/cron.js": {
       "memory": 512,
       "maxDuration": 60
     }
   },
-  "cron": [
+  "crons": [
     {
-      "path": "/api/daily-run",
+      "path": "/api/cron",
       "schedule": "0 14 * * *"
     },
     {
-      "path": "/api/daily-run",
+      "path": "/api/cron",
       "schedule": "0 18 * * *"
     },
     {
-      "path": "/api/daily-run",
+      "path": "/api/cron",
       "schedule": "0 22 * * *"
     }
   ]
