@@ -14,16 +14,18 @@ const TWITTER_CLIENT = new TwitterApi({
 
 export default async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.warn("🔒 Unauthorized access attempt");
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
-    // 1. Scrape Twitter Trends from trends24.in (USA)
+    console.log("🟡 Step 1: Fetching Twitter Trends...");
     const html = await fetch('https://trends24.in/united-states/').then(r => r.text());
     const matches = [...html.matchAll(/\/hashtag\/([^\"]+)/g)].map(m => decodeURIComponent(m[1].replace(/\+/g, ' '))).slice(0, 3);
     const topic = matches[0] || 'USA memes';
+    console.log("✅ Trends fetched:", matches);
 
-    // 2. Generate funny tweet
+    console.log("🟡 Step 2: Generating tweet text...");
     const textRes = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2", {
       method: 'POST',
       headers: {
@@ -34,8 +36,9 @@ export default async function handler(req, res) {
     });
     const textData = await textRes.json();
     const tweetText = textData[0]?.generated_text?.slice(0, 280) || `Meme time about ${topic}`;
+    console.log("✅ Tweet text:", tweetText);
 
-    // 3. Generate meme image
+    console.log("🟡 Step 3: Generating meme image...");
     const imgRes = await fetch("https://api-inference.huggingface.co/models/CompVis/stable-diffusion-v1-4", {
       method: "POST",
       headers: {
@@ -48,8 +51,9 @@ export default async function handler(req, res) {
     const imgArrayBuffer = await imgRes.arrayBuffer();
     const imgBuffer = Buffer.from(imgArrayBuffer);
     if (!imgBuffer || imgBuffer.length < 1000) throw new Error("Image generation failed or returned empty.");
+    console.log("✅ Meme image generated");
 
-    // 4. Upload to Imgur
+    console.log("🟡 Step 4: Uploading to Imgur...");
     const form = new FormData();
     form.append("image", imgBuffer.toString('base64'));
     const uploadRes = await fetch("https://api.imgur.com/3/image", {
@@ -63,11 +67,13 @@ export default async function handler(req, res) {
     const uploadData = await uploadRes.json();
     const imgURL = uploadData.data?.link || '';
     if (!imgURL) throw new Error("Imgur upload failed");
+    console.log("✅ Image uploaded:", imgURL);
 
-    // 5. Post to Twitter
+    console.log("🟡 Step 5: Posting to Twitter...");
     await TWITTER_CLIENT.v2.tweet({
       text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #USA 😂`
     });
+    console.log("✅ Tweet posted successfully!");
 
     res.status(200).json({ success: true, topic, tweetText, imgURL });
 
