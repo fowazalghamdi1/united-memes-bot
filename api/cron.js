@@ -1,4 +1,3 @@
-// /api/cron.js — Fully logged, bulletproof meme bot
 import crypto from 'crypto';
 import OAuth from 'oauth-1.0a';
 
@@ -14,42 +13,40 @@ export default async function handler(req, res) {
     const textRes = await fetch("https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.HF_API_KEY}`,
-        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: `Write a hilarious dark meme tweet in Gen Z American slang about ${topic}` }),
+      body: JSON.stringify({ inputs: `Write a darkly funny tweet in Gen Z American slang about ${topic}` })
     });
 
     const textRaw = await textRes.text();
     let tweetText;
     try {
       const parsed = JSON.parse(textRaw);
-      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `When ${topic} hits 😂`;
+      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
     } catch {
-      tweetText = `When ${topic} hits 😂`;
+      tweetText = `When ${topic} hits different 😂`;
     }
-    console.log("✅ Generated tweet text:", tweetText);
 
     let imgURL = null;
     try {
       console.log("🟡 Generating meme image...");
-      const imgRes = await fetch("https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2", {
+      const imgGen = await fetch("https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.HF_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inputs: `A meme in Family Guy or South Park cartoon style about ${topic}, funny, trending, Twitter meme format`,
+          inputs: `A meme in Family Guy or South Park cartoon style about ${topic}, funny, trending, viral, Twitter meme format`,
         }),
       });
 
-      const buffer = await imgRes.arrayBuffer();
-      const base64 = Buffer.from(buffer).toString("base64");
+      const imgBuffer = await imgGen.arrayBuffer();
+      const base64 = Buffer.from(imgBuffer).toString("base64");
 
-      if (base64.length < 10000) throw new Error("Low quality image");
+      if (base64.length < 5000) throw new Error("Image too small");
 
-      console.log("🟡 Uploading image to Imgur...");
       const upload = await fetch("https://api.imgur.com/3/image", {
         method: "POST",
         headers: {
@@ -61,18 +58,11 @@ export default async function handler(req, res) {
 
       const result = await upload.json();
       imgURL = result?.data?.link;
-      console.log("✅ Image URL:", imgURL);
     } catch (err) {
-      console.warn("⚠️ Image skipped:", err.message);
+      console.warn("⚠️ Skipping image:", err.message);
     }
 
     const finalTweet = `${tweetText}${imgURL ? `\n\n${imgURL}` : ''}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂`;
-
-    console.log("✅ Preparing to tweet:", finalTweet);
-
-    if (!process.env.TWITTER_API_KEY || !process.env.TWITTER_ACCESS_TOKEN) {
-      throw new Error("Missing Twitter credentials");
-    }
 
     const oauth = new OAuth({
       consumer: {
@@ -90,32 +80,42 @@ export default async function handler(req, res) {
       secret: process.env.TWITTER_ACCESS_SECRET,
     };
 
-    const tweetURL = "https://api.twitter.com/1.1/statuses/update.json";
+    const tweetURL = 'https://api.twitter.com/1.1/statuses/update.json';
     const request_data = {
       url: tweetURL,
-      method: "POST",
+      method: 'POST',
       data: { status: finalTweet },
     };
 
     const authHeader = oauth.toHeader(oauth.authorize(request_data, token));
 
     const tweetRes = await fetch(tweetURL, {
-      method: "POST",
+      method: 'POST',
       headers: {
         ...authHeader,
-        "Content-Type": "application/x-www-form-urlencoded",
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams({ status: finalTweet }),
+      body: new URLSearchParams({ status: finalTweet })
     });
 
-    const result = await tweetRes.json();
-    console.log("🟢 Twitter Response:", result);
+    const contentType = tweetRes.headers.get('content-type');
+    const responseBody = await tweetRes.text();
 
-    if (!result.id_str) throw new Error("Tweet failed - invalid credentials or rejected content");
+    if (!contentType?.includes('application/json')) {
+      console.error("❌ Twitter raw response:", responseBody);
+      throw new Error("Tweet failed: Twitter returned non-JSON");
+    }
 
-    res.status(200).json({ success: true, topic, tweet: finalTweet, url: result });
+    const tweetResult = JSON.parse(responseBody);
+    if (!tweetResult.id_str) {
+      console.error("❌ Twitter error JSON:", tweetResult);
+      throw new Error("Tweet failed");
+    }
+
+    console.log("✅ Tweet posted successfully:", tweetResult.id_str);
+    res.status(200).json({ success: true, tweet: finalTweet });
   } catch (err) {
-    console.error("❌ Fatal error:", err.message);
+    console.error("❌ Cron error:", err.message);
     res.status(500).json({ error: err.message });
   }
 }
