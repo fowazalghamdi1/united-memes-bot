@@ -1,4 +1,4 @@
-// /api/cron.js — Twitter OAuth 1.0a, no Bearer Token used
+// /api/cron.js — Twitter OAuth 1.0a, safer image generation
 import crypto from 'crypto';
 import OAuth from 'oauth-1.0a';
 
@@ -34,39 +34,44 @@ export default async function handler(req, res) {
     let imgURL = null;
     try {
       console.log("🟡 Generating meme image...");
-      const imgRes = await fetch("https://api-inference.huggingface.co/models/CompVis/stable-diffusion-v1-4", {
+      const imgGen = await fetch("https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.HF_API_KEY}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${process.env.HF_API_KEY}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ inputs: `A Family Guy-style cartoon meme about ${topic}` })
+        body: JSON.stringify({
+          inputs: `A meme in Family Guy or South Park cartoon style about ${topic}, funny, trending, viral, Twitter meme format`,
+        }),
       });
 
-      const imgArrayBuffer = await imgRes.arrayBuffer();
-      const imgBase64 = Buffer.from(imgArrayBuffer).toString("base64");
-      if (imgBase64.length < 1000) throw new Error("Empty image base64");
+      const imgBuffer = await imgGen.arrayBuffer();
+      const base64 = Buffer.from(imgBuffer).toString("base64");
 
-      console.log("🟡 Uploading image to Imgur...");
-      const imgurRes = await fetch("https://api.imgur.com/3/image", {
+      if (base64.length < 5000) {
+        throw new Error("⚠️ Image too small or failed. Skipping image...");
+      }
+
+      console.log("🟡 Uploading to Imgur...");
+      const upload = await fetch("https://api.imgur.com/3/image", {
         method: "POST",
         headers: {
-          "Authorization": `Client-ID ${process.env.IMGUR_CLIENT_ID}`,
-          "Content-Type": "application/json"
+          Authorization: `Client-ID ${process.env.IMGUR_CLIENT_ID}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ image: imgBase64 })
+        body: JSON.stringify({ image: base64 }),
       });
-      const imgurData = await imgurRes.json();
-      imgURL = imgurData?.data?.link;
-      console.log("✅ Imgur image uploaded:", imgURL);
-    } catch (imgErr) {
-      console.warn("⚠️ Image generation failed, posting without image.", imgErr);
+
+      const result = await upload.json();
+      imgURL = result?.data?.link;
+      console.log("✅ Uploaded to Imgur:", imgURL);
+    } catch (err) {
+      console.warn("⚠️ Image generation/upload failed. Continuing without image.", err.message);
     }
 
     const finalTweet = `${tweetText}${imgURL ? `\n\n${imgURL}` : ''}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂`;
     console.log("✅ Final tweet text:", finalTweet);
 
-    // Prepare OAuth 1.0a - no Bearer Token
     const oauth = new OAuth({
       consumer: {
         key: process.env.TWITTER_API_KEY,
