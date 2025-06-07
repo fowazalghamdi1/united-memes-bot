@@ -44,7 +44,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({ inputs: `A hilarious cartoon meme in Simpsons style about ${topic}` })
     });
 
-    const imgBuffer = await imgRes.buffer();
+    const imgArrayBuffer = await imgRes.arrayBuffer();
+    const imgBuffer = Buffer.from(imgArrayBuffer);
     if (!imgBuffer || imgBuffer.length < 1000) throw new Error("Image generation failed or returned empty.");
 
     // 4. Upload to Imgur
