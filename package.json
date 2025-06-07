@@ -1,13 +1,1 @@
-{
-  "name": "united-memes-bot",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "index.js",
-  "dependencies": {
-    "form-data": "^4.0.0",
-    "twitter-api-v2": "^1.18.0"
-  },
-  "engines": {
-    "node": ">=18"
-  }
-}
+
