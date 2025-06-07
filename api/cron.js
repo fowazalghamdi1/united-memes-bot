@@ -1,3 +1,4 @@
+// /api/cron.js — Twitter OAuth 1.0a with improved logging and fallback
 import crypto from 'crypto';
 import OAuth from 'oauth-1.0a';
 
@@ -10,7 +11,7 @@ export default async function handler(req, res) {
     console.log("✅ Top trends:", matches);
 
     console.log("🟡 Generating tweet text...");
-    const textRes = await fetch("https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", {
+    const textRes = await fetch("https://api-inference.huggingface.co/models/google/flan-t5-large", {
       method: 'POST',
       headers: {
         "Authorization": `Bearer ${process.env.HF_API_KEY}`,
@@ -24,9 +25,11 @@ export default async function handler(req, res) {
     try {
       const parsed = JSON.parse(textRaw);
       tweetText = parsed[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
-    } catch {
+    } catch (e) {
+      console.error("⚠️ Failed to parse tweet response:", textRaw);
       tweetText = `When ${topic} hits different 😂`;
     }
+    console.log("✅ Generated tweet:", tweetText);
 
     let imgURL = null;
     try {
@@ -45,8 +48,12 @@ export default async function handler(req, res) {
       const imgBuffer = await imgGen.arrayBuffer();
       const base64 = Buffer.from(imgBuffer).toString("base64");
 
-      if (base64.length < 5000) throw new Error("Image too small");
+      if (base64.length < 5000) {
+        console.warn("⚠️ Base64 image too small:", base64.length);
+        throw new Error("Image too small or failed.");
+      }
 
+      console.log("🟡 Uploading to Imgur...");
       const upload = await fetch("https://api.imgur.com/3/image", {
         method: "POST",
         headers: {
@@ -58,11 +65,13 @@ export default async function handler(req, res) {
 
       const result = await upload.json();
       imgURL = result?.data?.link;
+      console.log("✅ Uploaded to Imgur:", imgURL);
     } catch (err) {
-      console.warn("⚠️ Skipping image:", err.message);
+      console.warn("⚠️ Image generation/upload failed. Continuing without image.", err.message);
     }
 
     const finalTweet = `${tweetText}${imgURL ? `\n\n${imgURL}` : ''}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂`;
+    console.log("✅ Final tweet text:", finalTweet);
 
     const oauth = new OAuth({
       consumer: {
@@ -88,7 +97,6 @@ export default async function handler(req, res) {
     };
 
     const authHeader = oauth.toHeader(oauth.authorize(request_data, token));
-
     const tweetRes = await fetch(tweetURL, {
       method: 'POST',
       headers: {
@@ -98,24 +106,22 @@ export default async function handler(req, res) {
       body: new URLSearchParams({ status: finalTweet })
     });
 
-    const contentType = tweetRes.headers.get('content-type');
-    const responseBody = await tweetRes.text();
-
-    if (!contentType?.includes('application/json')) {
-      console.error("❌ Twitter raw response:", responseBody);
-      throw new Error("Tweet failed: Twitter returned non-JSON");
+    const text = await tweetRes.text();
+    try {
+      const tweetResult = JSON.parse(text);
+      if (!tweetResult.id_str) {
+        console.error("🟥 Tweet failed response:", tweetResult);
+        throw new Error("Tweet failed");
+      }
+      console.log("✅ Tweet posted!", tweetResult);
+      res.status(200).json({ success: true, topic, tweetText, imgURL });
+    } catch (e) {
+      console.error("🟥 Failed to parse tweet response:", text);
+      throw new Error("Tweet failed hard");
     }
 
-    const tweetResult = JSON.parse(responseBody);
-    if (!tweetResult.id_str) {
-      console.error("❌ Twitter error JSON:", tweetResult);
-      throw new Error("Tweet failed");
-    }
-
-    console.log("✅ Tweet posted successfully:", tweetResult.id_str);
-    res.status(200).json({ success: true, tweet: finalTweet });
   } catch (err) {
-    console.error("❌ Cron error:", err.message);
+    console.error("❌ Cron error:", err);
     res.status(500).json({ error: err.message });
   }
 }
