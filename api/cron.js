@@ -1,35 +1,34 @@
-// /api/cron.js — updated with better model and safe JSON parsing
+// /api/cron.js — updated with Falcon model + fail-safes
 export default async function handler(req, res) {
-  // TEMPORARILY DISABLED AUTH CHECK
-  // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-  //   return res.status(401).json({ error: 'Unauthorized' });
-  // }
-
   try {
     console.log("🟡 Fetching Twitter trends...");
     const html = await fetch('https://trends24.in/united-states/').then(r => r.text());
-    const matches = [...html.matchAll(/\/hashtag\/([^\"]+)/g)].map(m => decodeURIComponent(m[1].replace(/\+/g, ' '))).slice(0, 3);
+    const matches = [...html.matchAll(/\/hashtag\/([^\"]+)/g)]
+      .map(m => decodeURIComponent(m[1].replace(/\+/g, ' ')))
+      .slice(0, 3);
     const topic = matches[0] || 'USA memes';
     console.log("✅ Top trends:", matches);
 
     console.log("🟡 Generating tweet text...");
-    const textRes = await fetch("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-alpha", {
+    const textRes = await fetch("https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct", {
       method: 'POST',
       headers: {
         "Authorization": `Bearer ${process.env.HF_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: `Write a hilarious dark comedy tweet in Gen Z American slang about ${topic}` })
+      body: JSON.stringify({
+        inputs: `Create a dark sarcastic tweet in American Gen Z slang about ${topic}`
+      })
     });
 
     const textRaw = await textRes.text();
-    let tweetText;
+    let tweetText = '';
     try {
       const parsed = JSON.parse(textRaw);
-      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
+      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `When ${topic} hits different 😂`;
     } catch (e) {
       console.error("⚠️ Failed to parse tweet response:", textRaw);
-      throw new Error("Tweet generation failed");
+      tweetText = `When ${topic} hits different 😂`;
     }
     console.log("✅ Generated tweet:", tweetText);
 
@@ -40,7 +39,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${process.env.HF_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: `A funny cartoon meme in Family Guy style about ${topic}` })
+      body: JSON.stringify({ inputs: `A dark comedy cartoon in Family Guy style about ${topic}` })
     });
 
     const imgArrayBuffer = await imgRes.arrayBuffer();
@@ -56,6 +55,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({ image: imgBase64 })
     });
+
     const imgurData = await imgurRes.json();
     const imgURL = imgurData?.data?.link;
     if (!imgURL) throw new Error("Failed to upload to Imgur");
@@ -68,15 +68,16 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂` })
+      body: JSON.stringify({
+        text: `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #memes #usa 😂`
+      })
     });
 
     const tweetResult = await tweetRes.json();
     if (!tweetResult.data) throw new Error("Tweet failed");
-    console.log("✅ Tweet posted!");
+    console.log("✅ Tweet posted:", tweetResult.data);
 
     res.status(200).json({ success: true, topic, tweetText, imgURL });
-
   } catch (err) {
     console.error("❌ Cron error:", err);
     res.status(500).json({ error: err.message });
