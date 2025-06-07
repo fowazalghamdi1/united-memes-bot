@@ -1,4 +1,4 @@
-// /api/cron.js — Twitter OAuth 1.0a with improved logging and fallback
+// /api/cron.js — Improved fallback & dry-run mode
 import crypto from 'crypto';
 import OAuth from 'oauth-1.0a';
 
@@ -11,24 +11,24 @@ export default async function handler(req, res) {
     console.log("✅ Top trends:", matches);
 
     console.log("🟡 Generating tweet text...");
-    const textRes = await fetch("https://api-inference.huggingface.co/models/google/flan-t5-large", {
-      method: 'POST',
-      headers: {
-        "Authorization": `Bearer ${process.env.HF_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ inputs: `Write a darkly funny tweet in Gen Z American slang about ${topic}` })
-    });
+    let tweetText = `When ${topic} hits different 😂`;
 
-    const textRaw = await textRes.text();
-    let tweetText;
     try {
+      const textRes = await fetch("https://api-inference.huggingface.co/models/google/flan-t5-large", {
+        method: 'POST',
+        headers: {
+          "Authorization": `Bearer ${process.env.HF_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ inputs: `Write a darkly funny tweet in Gen Z American slang about ${topic}` })
+      });
+      const textRaw = await textRes.text();
       const parsed = JSON.parse(textRaw);
-      tweetText = parsed[0]?.generated_text?.slice(0, 280) || `Dark meme time about ${topic}`;
+      tweetText = parsed[0]?.generated_text?.slice(0, 280) || tweetText;
     } catch (e) {
-      console.error("⚠️ Failed to parse tweet response:", textRaw);
-      tweetText = `When ${topic} hits different 😂`;
+      console.warn("⚠️ Tweet generation failed, using fallback:", e.message);
     }
+
     console.log("✅ Generated tweet:", tweetText);
 
     let imgURL = null;
@@ -41,17 +41,14 @@ export default async function handler(req, res) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inputs: `A meme in Family Guy or South Park cartoon style about ${topic}, funny, trending, viral, Twitter meme format`,
+          inputs: `Cartoon meme in Family Guy or South Park style about ${topic}`,
         }),
       });
 
       const imgBuffer = await imgGen.arrayBuffer();
       const base64 = Buffer.from(imgBuffer).toString("base64");
 
-      if (base64.length < 5000) {
-        console.warn("⚠️ Base64 image too small:", base64.length);
-        throw new Error("Image too small or failed.");
-      }
+      if (base64.length < 5000) throw new Error("Image too small or failed");
 
       console.log("🟡 Uploading to Imgur...");
       const upload = await fetch("https://api.imgur.com/3/image", {
@@ -67,12 +64,14 @@ export default async function handler(req, res) {
       imgURL = result?.data?.link;
       console.log("✅ Uploaded to Imgur:", imgURL);
     } catch (err) {
-      console.warn("⚠️ Image generation/upload failed. Continuing without image.", err.message);
+      console.warn("⚠️ Image generation failed. Using fallback meme.", err.message);
+      imgURL = "https://i.imgur.com/fYzYB0R.jpeg";
     }
 
-    const finalTweet = `${tweetText}${imgURL ? `\n\n${imgURL}` : ''}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂`;
+    const finalTweet = `${tweetText}\n\n${imgURL}\n\n#${topic.replace(/\s+/g, '')} #meme #usa 😂`;
     console.log("✅ Final tweet text:", finalTweet);
 
+    // OAuth 1.0a setup
     const oauth = new OAuth({
       consumer: {
         key: process.env.TWITTER_API_KEY,
@@ -106,20 +105,23 @@ export default async function handler(req, res) {
       body: new URLSearchParams({ status: finalTweet })
     });
 
-    const text = await tweetRes.text();
+    const responseBody = await tweetRes.text();
+    let tweetResult;
+
     try {
-      const tweetResult = JSON.parse(text);
-      if (!tweetResult.id_str) {
-        console.error("🟥 Tweet failed response:", tweetResult);
-        throw new Error("Tweet failed");
-      }
-      console.log("✅ Tweet posted!", tweetResult);
-      res.status(200).json({ success: true, topic, tweetText, imgURL });
+      tweetResult = JSON.parse(responseBody);
     } catch (e) {
-      console.error("🟥 Failed to parse tweet response:", text);
-      throw new Error("Tweet failed hard");
+      console.error("❌ Failed to parse tweet response:", responseBody);
+      throw new Error("Tweet failed: Not JSON");
     }
 
+    if (!tweetResult.id_str) {
+      console.error("❌ Tweet post failed:", tweetResult);
+      throw new Error("Tweet failed: No ID");
+    }
+
+    console.log("✅ Tweet posted:", tweetResult.id_str);
+    res.status(200).json({ success: true, topic, tweetText, imgURL });
   } catch (err) {
     console.error("❌ Cron error:", err);
     res.status(500).json({ error: err.message });
