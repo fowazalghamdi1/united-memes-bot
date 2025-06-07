@@ -1,0 +1,8 @@
+{
+  "name": "united-memes-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "oauth-1.0a": "^2.2.6"
+  }
+}
