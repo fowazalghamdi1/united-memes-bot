@@ -3,7 +3,6 @@ import fetch from 'node-fetch';
 import { TwitterApi } from 'twitter-api-v2';
 
 const HF_API_KEY = process.env.HF_API_KEY;
-const IMGUR_CLIENT_ID = process.env.IMGUR_CLIENT_ID;
 const TWITTER_CLIENT = new TwitterApi({
   appKey: process.env.TWITTER_API_KEY,
   appSecret: process.env.TWITTER_API_SECRET,
@@ -48,18 +47,19 @@ export default async function handler(req, res) {
     const imgBuffer = Buffer.from(imgArrayBuffer);
     if (!imgBuffer || imgBuffer.length < 1000) throw new Error("Image generation failed or returned empty.");
 
-    // 4. Upload to Imgur
-    const imgurRes = await fetch("https://api.imgur.com/3/image", {
+    // 4. Upload to file.io
+    const uploadRes = await fetch("https://file.io/?expires=1d", {
       method: "POST",
-      headers: {
-        Authorization: `Client-ID ${IMGUR_CLIENT_ID}`
-      },
-      body: new URLSearchParams({ image: imgBuffer.toString('base64') })
+      body: (() => {
+        const form = new FormData();
+        form.append("file", new Blob([imgBuffer]), "meme.png");
+        return form;
+      })()
     });
 
-    const imgurData = await imgurRes.json();
-    const imgURL = imgurData.data?.link || '';
-    if (!imgURL) throw new Error("Imgur upload failed");
+    const uploadData = await uploadRes.json();
+    const imgURL = uploadData.link || '';
+    if (!imgURL) throw new Error("file.io upload failed");
 
     // 5. Post to Twitter
     await TWITTER_CLIENT.v2.tweet({
