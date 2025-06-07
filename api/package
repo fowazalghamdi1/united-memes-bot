@@ -2,6 +2,6 @@
   "type": "module",
   "dependencies": {
     "twitter-api-v2": "^1.18.0",
-    "node-fetch": "^2.6.11"
+    "node-fetch": "^2.6.9"
   }
 }
