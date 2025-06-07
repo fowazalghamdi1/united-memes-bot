@@ -1,4 +1,4 @@
-// /api/cron.js — updated with safe JSON parsing and logging
+// /api/cron.js — updated with better model and safe JSON parsing
 export default async function handler(req, res) {
   // TEMPORARILY DISABLED AUTH CHECK
   // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     console.log("✅ Top trends:", matches);
 
     console.log("🟡 Generating tweet text...");
-    const textRes = await fetch("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2", {
+    const textRes = await fetch("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-alpha", {
       method: 'POST',
       headers: {
         "Authorization": `Bearer ${process.env.HF_API_KEY}`,
